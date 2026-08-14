@@ -17,6 +17,14 @@ type Timestamp struct {
 
 // MarshalJSON returns the Unix timestamp as a string.
 func (t Timestamp) MarshalJSON() ([]byte, error) {
+	// A timestamp the provider left empty has no Unix representation to send on;
+	// t.Time.Unix() would be a nonsensical -62135596800 here.
+	if t.Time.IsZero() {
+		if t.quoted {
+			return []byte(`""`), nil
+		}
+		return []byte("null"), nil
+	}
 	if t.quoted {
 		return []byte(`"` + strconv.FormatInt(t.Time.Unix(), 10) + `"`), nil
 	}
@@ -27,7 +35,14 @@ func (t Timestamp) MarshalJSON() ([]byte, error) {
 func (t *Timestamp) UnmarshalJSON(b []byte) error {
 	// Timestamps are sometimes quoted, sometimes not, lets just always remove quotes just in case...
 	t.quoted = strings.Contains(string(b), `"`)
-	ts, err := strconv.Atoi(strings.Replace(string(b), `"`, "", -1))
+	raw := strings.TrimSpace(strings.Replace(string(b), `"`, "", -1))
+	// Providers leave optional timestamps such as the series air date empty or
+	// null. Those are not errors, they just carry no time.
+	if raw == "" || raw == "null" {
+		t.Time = time.Time{}
+		return nil
+	}
+	ts, err := strconv.Atoi(raw)
 	if err != nil {
 		return err
 	}
